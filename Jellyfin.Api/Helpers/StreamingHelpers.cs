@@ -151,6 +151,13 @@ public static class StreamingHelpers
             }
         }
 
+        if (mediaSource is null)
+        {
+            throw new ResourceNotFoundException();
+        }
+
+        ApplyCueTrackPlaybackWindow(mediaSource, streamingRequest);
+
         var encodingOptions = serverConfigurationManager.GetEncodingOptions();
 
         encodingHelper.AttachMediaSourceInfo(state, encodingOptions, mediaSource, url);
@@ -254,6 +261,25 @@ public static class StreamingHelpers
         state.OutputFilePath = GetOutputFilePath(state, ext, serverConfigurationManager, streamingRequest.DeviceId, streamingRequest.PlaySessionId);
 
         return state;
+    }
+
+    /// <summary>
+    /// Maps client-relative playback offsets for CUE tracks to absolute offsets in the backing media file.
+    /// </summary>
+    /// <param name="mediaSource">The media source.</param>
+    /// <param name="streamingRequest">The streaming request.</param>
+    public static void ApplyCueTrackPlaybackWindow(MediaSourceInfo mediaSource, StreamingRequestDto streamingRequest)
+    {
+        if (!mediaSource.CueStartPositionTicks.HasValue || !mediaSource.CueEndPositionTicks.HasValue)
+        {
+            return;
+        }
+
+        var cueDurationTicks = Math.Max(0, mediaSource.CueEndPositionTicks.Value - mediaSource.CueStartPositionTicks.Value);
+        var requestedOffsetTicks = Math.Clamp(streamingRequest.StartTimeTicks ?? 0, 0, cueDurationTicks);
+        streamingRequest.StartTimeTicks = mediaSource.CueStartPositionTicks.Value + requestedOffsetTicks;
+        streamingRequest.Static = false;
+        mediaSource.RunTimeTicks = cueDurationTicks;
     }
 
     /// <summary>

@@ -2971,7 +2971,7 @@ namespace MediaBrowser.Controller.MediaEncoding
 
                 // Seeking beyond EOF makes no sense in transcoding. Clamp the seekTick value to
                 // [0, RuntimeTicks - 5.0s], so that the muxer gets packets and avoid error codes.
-                if (maxTime > 0)
+                if (maxTime > 0 && !state.MediaSource.CueStartPositionTicks.HasValue)
                 {
                     seekTick = Math.Clamp(seekTick, 0, Math.Max(maxTime - 50000000L, 0));
                 }
@@ -7814,6 +7814,16 @@ namespace MediaBrowser.Controller.MediaEncoding
             var threads = GetNumberOfThreads(state, encodingOptions, null);
 
             var inputModifier = GetInputModifier(state, encodingOptions, null);
+            var durationParam = string.Empty;
+            if (state.MediaSource.CueEndPositionTicks.HasValue)
+            {
+                var absoluteStartTicks = state.BaseRequest.StartTimeTicks ?? state.MediaSource.CueStartPositionTicks ?? 0;
+                var remainingTicks = state.MediaSource.CueEndPositionTicks.Value - absoluteStartTicks;
+                if (remainingTicks > 0)
+                {
+                    durationParam = " -t " + _mediaEncoder.GetTimeParameter(remainingTicks);
+                }
+            }
 
             return string.Format(
                 CultureInfo.InvariantCulture,
@@ -7824,7 +7834,7 @@ namespace MediaBrowser.Controller.MediaEncoding
                 " -vn",
                 string.Join(' ', audioTranscodeParams),
                 outputPath,
-                string.Empty,
+                durationParam,
                 string.Empty,
                 string.Empty).Trim();
         }

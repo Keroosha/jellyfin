@@ -134,6 +134,8 @@ public class MediaInfoHelper
                 for (int i = 0; i < mediaSourcesClone.Length && i < mediaSources.Length; i++)
                 {
                     mediaSourcesClone[i].DefaultAudioIndexSource = mediaSources[i].DefaultAudioIndexSource;
+                    mediaSourcesClone[i].CueStartPositionTicks = mediaSources[i].CueStartPositionTicks;
+                    mediaSourcesClone[i].CueEndPositionTicks = mediaSources[i].CueEndPositionTicks;
                 }
 
                 result.MediaSources = mediaSourcesClone;

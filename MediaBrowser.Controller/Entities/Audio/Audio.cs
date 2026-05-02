@@ -11,6 +11,8 @@ using System.Text.Json.Serialization;
 using Jellyfin.Data.Enums;
 using MediaBrowser.Controller.Providers;
 using MediaBrowser.Model.Dto;
+using MediaBrowser.Model.Entities;
+using MediaBrowser.Model.MediaInfo;
 
 namespace MediaBrowser.Controller.Entities.Audio
 {
@@ -76,6 +78,41 @@ namespace MediaBrowser.Controller.Entities.Audio
         /// Gets or sets the list of lyric paths.
         /// </summary>
         public IReadOnlyList<string> LyricFiles { get; set; }
+
+        /// <summary>
+        /// Gets or sets the path to the CUE file that defined this virtual track.
+        /// </summary>
+        public string CueSheetPath { get; set; }
+
+        /// <summary>
+        /// Gets or sets the physical media file used to play this virtual CUE track.
+        /// </summary>
+        public string CueMediaSourcePath { get; set; }
+
+        /// <summary>
+        /// Gets or sets the 1-based CUE track number.
+        /// </summary>
+        public int? CueTrackNumber { get; set; }
+
+        /// <summary>
+        /// Gets or sets the CUE track start offset within <see cref="CueMediaSourcePath"/>.
+        /// </summary>
+        public long? CueStartTicks { get; set; }
+
+        /// <summary>
+        /// Gets or sets the CUE track end offset within <see cref="CueMediaSourcePath"/>.
+        /// </summary>
+        public long? CueEndTicks { get; set; }
+
+        /// <summary>
+        /// Gets or sets the CUE pregap duration for this virtual track.
+        /// </summary>
+        public long? CuePregapTicks { get; set; }
+
+        [JsonIgnore]
+        public bool IsCueTrack => !string.IsNullOrWhiteSpace(CueMediaSourcePath)
+            && CueStartTicks.HasValue
+            && CueEndTicks.HasValue;
 
         public override double GetDefaultPrimaryImageAspectRatio()
         {
@@ -149,5 +186,37 @@ namespace MediaBrowser.Controller.Entities.Audio
 
         protected override IEnumerable<(BaseItem Item, MediaSourceType MediaSourceType)> GetAllItemsForMediaSources()
             => new[] { ((BaseItem)this, MediaSourceType.Default) };
+
+        public override IReadOnlyList<MediaSourceInfo> GetMediaSources(bool enablePathSubstitution)
+        {
+            if (!IsCueTrack)
+            {
+                return base.GetMediaSources(enablePathSubstitution);
+            }
+
+            var mediaSource = new MediaSourceInfo
+            {
+                Id = Id.ToString("N", CultureInfo.InvariantCulture),
+                Protocol = MediaProtocol.File,
+                MediaStreams = MediaSourceManager.GetMediaStreams(Id),
+                MediaAttachments = MediaSourceManager.GetMediaAttachments(Id),
+                Name = Name,
+                Path = CueMediaSourcePath,
+                RunTimeTicks = RunTimeTicks,
+                Container = Container ?? System.IO.Path.GetExtension(CueMediaSourcePath).TrimStart('.'),
+                Size = Size,
+                Type = MediaSourceType.Default,
+                Bitrate = TotalBitrate,
+                SupportsDirectPlay = false,
+                SupportsDirectStream = false,
+                SupportsTranscoding = true,
+                CueStartPositionTicks = CueStartTicks,
+                CueEndPositionTicks = CueEndTicks
+            };
+
+            mediaSource.InferTotalBitrate();
+
+            return new[] { mediaSource };
+        }
     }
 }

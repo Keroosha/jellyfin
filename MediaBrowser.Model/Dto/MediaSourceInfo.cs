@@ -129,6 +129,12 @@ namespace MediaBrowser.Model.Dto
         public bool HasSegments { get; set; }
 
         [JsonIgnore]
+        public long? CueStartPositionTicks { get; set; }
+
+        [JsonIgnore]
+        public long? CueEndPositionTicks { get; set; }
+
+        [JsonIgnore]
         public MediaStream VideoStream
         {
             get

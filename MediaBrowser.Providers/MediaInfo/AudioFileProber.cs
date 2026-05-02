@@ -84,7 +84,7 @@ namespace MediaBrowser.Providers.MediaInfo
             CancellationToken cancellationToken)
             where T : Audio
         {
-            var path = item.Path;
+            var path = item.IsCueTrack ? item.CueMediaSourcePath : item.Path;
             var protocol = item.PathProtocol ?? MediaProtocol.File;
 
             if (!item.IsShortcut || options.EnableRemoteContentProbe)
@@ -132,14 +132,21 @@ namespace MediaBrowser.Providers.MediaInfo
             audio.Container = mediaInfo.Container;
             audio.TotalBitrate = mediaInfo.Bitrate;
 
-            audio.RunTimeTicks = mediaInfo.RunTimeTicks;
+            if (!audio.IsCueTrack)
+            {
+                audio.RunTimeTicks = mediaInfo.RunTimeTicks;
+            }
 
             // Add external lyrics first to prevent the lrc file get overwritten on first scan
             var mediaStreams = new List<MediaStream>(mediaInfo.MediaStreams);
-            AddExternalLyrics(audio, mediaStreams, options);
+            if (!audio.IsCueTrack)
+            {
+                AddExternalLyrics(audio, mediaStreams, options);
+            }
+
             var tryExtractEmbeddedLyrics = mediaStreams.All(s => s.Type != MediaStreamType.Lyric);
 
-            if (!audio.IsLocked)
+            if (!audio.IsLocked && !audio.IsCueTrack)
             {
                 await FetchDataFromTags(audio, mediaInfo, options, tryExtractEmbeddedLyrics).ConfigureAwait(false);
                 if (tryExtractEmbeddedLyrics)
@@ -148,7 +155,7 @@ namespace MediaBrowser.Providers.MediaInfo
                 }
             }
 
-            audio.HasLyrics = mediaStreams.Any(s => s.Type == MediaStreamType.Lyric);
+            audio.HasLyrics = !audio.IsCueTrack && mediaStreams.Any(s => s.Type == MediaStreamType.Lyric);
 
             _mediaStreamRepository.SaveMediaStreams(audio.Id, mediaStreams, cancellationToken);
         }

@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.Linq;
 using MediaBrowser.Controller.Entities;
+using MediaBrowser.Controller.Entities.Audio;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Controller.Providers;
 using MediaBrowser.Model.IO;
@@ -39,7 +40,9 @@ namespace Emby.Server.Implementations.Library
                 item.GetParents().Any(i => i.IsLocked);
 
             // Make sure DateCreated and DateModified have values
-            var fileInfo = directoryService.GetFileSystemEntry(item.Path);
+            var fileInfo = item is Audio { IsCueTrack: true } audio
+                ? directoryService.GetFileSystemEntry(audio.CueMediaSourcePath) ?? directoryService.GetFileSystemEntry(audio.CueSheetPath)
+                : directoryService.GetFileSystemEntry(item.Path);
             if (fileInfo is null)
             {
                 return false;
