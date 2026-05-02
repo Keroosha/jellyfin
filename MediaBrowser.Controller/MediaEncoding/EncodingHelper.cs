@@ -201,6 +201,23 @@ namespace MediaBrowser.Controller.MediaEncoding
         public string GetH264Encoder(EncodingJobInfo state, EncodingOptions encodingOptions)
             => GetH26xOrAv1Encoder("libx264", "h264", state, encodingOptions);
 
+        /// <summary>
+        /// Gets the remaining duration of a CUE media source from an absolute start position.
+        /// </summary>
+        /// <param name="mediaSource">The media source.</param>
+        /// <param name="absoluteStartTicks">The absolute start position in the backing media file.</param>
+        /// <returns>The remaining CUE duration, or null when the media source is not bounded by a CUE end position.</returns>
+        public static long? GetCueRemainingTicks(MediaSourceInfo mediaSource, long? absoluteStartTicks)
+        {
+            if (!mediaSource.CueEndPositionTicks.HasValue)
+            {
+                return null;
+            }
+
+            var startTicks = absoluteStartTicks ?? mediaSource.CueStartPositionTicks ?? 0;
+            return Math.Max(0, mediaSource.CueEndPositionTicks.Value - startTicks);
+        }
+
         public string GetH265Encoder(EncodingJobInfo state, EncodingOptions encodingOptions)
             => GetH26xOrAv1Encoder("libx265", "hevc", state, encodingOptions);
 
@@ -7815,14 +7832,10 @@ namespace MediaBrowser.Controller.MediaEncoding
 
             var inputModifier = GetInputModifier(state, encodingOptions, null);
             var durationParam = string.Empty;
-            if (state.MediaSource.CueEndPositionTicks.HasValue)
+            var cueRemainingTicks = GetCueRemainingTicks(state.MediaSource, state.BaseRequest.StartTimeTicks);
+            if (cueRemainingTicks.HasValue)
             {
-                var absoluteStartTicks = state.BaseRequest.StartTimeTicks ?? state.MediaSource.CueStartPositionTicks ?? 0;
-                var remainingTicks = state.MediaSource.CueEndPositionTicks.Value - absoluteStartTicks;
-                if (remainingTicks > 0)
-                {
-                    durationParam = " -t " + _mediaEncoder.GetTimeParameter(remainingTicks);
-                }
+                durationParam = " -t " + _mediaEncoder.GetTimeParameter(cueRemainingTicks.Value);
             }
 
             return string.Format(

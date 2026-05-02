@@ -1635,15 +1635,11 @@ public class DynamicHlsController : BaseJellyfinApiController
 
         var durationParam = string.Empty;
         var timestampParam = " -copyts -avoid_negative_ts disabled";
-        if (state.MediaSource.CueEndPositionTicks.HasValue)
+        var cueRemainingTicks = EncodingHelper.GetCueRemainingTicks(state.MediaSource, state.BaseRequest.StartTimeTicks);
+        if (cueRemainingTicks.HasValue)
         {
             timestampParam = string.Empty;
-            var absoluteStartTicks = state.BaseRequest.StartTimeTicks ?? state.MediaSource.CueStartPositionTicks ?? 0;
-            var remainingTicks = state.MediaSource.CueEndPositionTicks.Value - absoluteStartTicks;
-            if (remainingTicks > 0)
-            {
-                durationParam = " -t " + _mediaEncoder.GetTimeParameter(remainingTicks);
-            }
+            durationParam = " -t " + _mediaEncoder.GetTimeParameter(cueRemainingTicks.Value);
         }
 
         return string.Format(
