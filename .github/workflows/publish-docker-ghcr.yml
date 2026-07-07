@@ -66,7 +66,7 @@ jobs:
       contents: read
       packages: write
     env:
-      IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/jellyfin
+      IMAGE_OWNER: ${{ github.repository_owner }}
     steps:
       - name: Checkout packaging repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -117,6 +117,7 @@ jobs:
         env:
           BUILD_REF_INPUT: ${{ inputs.ref }}
           DEFAULT_BUILD_REF: ${{ github.ref_name }}
+          IMAGE_OWNER: ${{ github.repository_owner }}
           IMAGE_TAG_INPUT: ${{ inputs.image_tag }}
         run: |
           set -euo pipefail
@@ -138,11 +139,14 @@ jobs:
           fi
 
           image_tag="${image_tag:0:80}"
+          image_owner="$(printf '%s' "$IMAGE_OWNER" | tr '[:upper:]' '[:lower:]')"
+          image_name="ghcr.io/${image_owner}/jellyfin"
           short_sha="$(git -C jellyfin-server rev-parse --short=12 HEAD)"
           version="${image_tag}-${short_sha}"
 
           {
             echo "build_ref=$build_ref"
+            echo "image_name=$image_name"
             echo "image_tag=$image_tag"
             echo "short_sha=$short_sha"
             echo "version=$version"
@@ -165,6 +169,7 @@ jobs:
       - name: Push Docker image
         env:
           BUILD_ARCH: ${{ inputs.arch }}
+          IMAGE_NAME: ${{ steps.meta.outputs.image_name }}
           IMAGE_TAG: ${{ steps.meta.outputs.image_tag }}
           VERSION: ${{ steps.meta.outputs.version }}
         run: |
