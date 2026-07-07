@@ -1,0 +1,200 @@
+name: Publish Docker image to GHCR
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Branch, tag, or SHA from this repository to build. Empty uses the selected workflow branch.
+        required: false
+        type: string
+      image_tag:
+        description: GHCR tag prefix. Empty uses a sanitized ref name.
+        required: false
+        type: string
+      arch:
+        description: Container architecture to build.
+        required: true
+        default: amd64
+        type: choice
+        options:
+          - amd64
+          - arm64
+
+permissions: {}
+
+concurrency:
+  group: publish-docker-ghcr-${{ github.event.inputs.ref || github.ref_name }}-${{ github.event.inputs.arch }}
+  cancel-in-progress: false
+
+jobs:
+  authorize:
+    name: Authorize publisher
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - name: Allow owner and write collaborators
+        env:
+          ACTOR: ${{ github.actor }}
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          REPOSITORY_OWNER: ${{ github.repository_owner }}
+        run: |
+          set -euo pipefail
+
+          if [ "$ACTOR" = "$REPOSITORY_OWNER" ]; then
+            echo "Repository owner $ACTOR is allowed to publish."
+            exit 0
+          fi
+
+          permission="$(gh api "repos/${REPOSITORY}/collaborators/${ACTOR}/permission" --jq '.permission' 2>/dev/null || true)"
+          case "$permission" in
+            admin|maintain|write)
+              echo "Repository collaborator $ACTOR is allowed to publish with $permission permission."
+              ;;
+            *)
+              echo "::error::User $ACTOR is not allowed to run this publish workflow. Required repository owner, admin, maintain, or write permission."
+              exit 1
+              ;;
+          esac
+
+  publish:
+    name: Build and publish
+    runs-on: ubuntu-24.04
+    needs: authorize
+    permissions:
+      contents: read
+      packages: write
+    env:
+      IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/jellyfin
+    steps:
+      - name: Checkout packaging repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          repository: jellyfin/jellyfin-packaging
+          path: jellyfin-packaging
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Install packaging dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes python3-git python3-yaml
+
+      - name: Prepare packaging submodules
+        working-directory: jellyfin-packaging
+        run: ./checkout.py master
+
+      - name: Checkout requested Jellyfin server ref
+        working-directory: jellyfin-packaging
+        env:
+          BUILD_REF_INPUT: ${{ inputs.ref }}
+          DEFAULT_BUILD_REF: ${{ github.ref_name }}
+          SERVER_REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          build_ref="$BUILD_REF_INPUT"
+          if [ -z "$build_ref" ]; then
+            build_ref="$DEFAULT_BUILD_REF"
+          fi
+
+          if [[ "$build_ref" == -* || "$build_ref" == *..* || "$build_ref" == *@{* || "$build_ref" =~ [^A-Za-z0-9._/@-] ]]; then
+            echo "::error::Invalid ref '$build_ref'. Use a branch, tag, SHA, or refs/heads/* value."
+            exit 1
+          fi
+
+          git -C jellyfin-server remote add build-source "https://github.com/${SERVER_REPOSITORY}.git" 2>/dev/null \
+            || git -C jellyfin-server remote set-url build-source "https://github.com/${SERVER_REPOSITORY}.git"
+          git -C jellyfin-server fetch --no-tags build-source "$build_ref"
+          git -C jellyfin-server checkout --detach FETCH_HEAD
+          git -C jellyfin-server submodule update --init --recursive
+          git -C jellyfin-server log --oneline -1
+
+      - name: Resolve image tags
+        id: meta
+        working-directory: jellyfin-packaging
+        env:
+          BUILD_REF_INPUT: ${{ inputs.ref }}
+          DEFAULT_BUILD_REF: ${{ github.ref_name }}
+          IMAGE_TAG_INPUT: ${{ inputs.image_tag }}
+        run: |
+          set -euo pipefail
+
+          build_ref="$BUILD_REF_INPUT"
+          if [ -z "$build_ref" ]; then
+            build_ref="$DEFAULT_BUILD_REF"
+          fi
+
+          raw_tag="$IMAGE_TAG_INPUT"
+          if [ -z "$raw_tag" ]; then
+            raw_tag="$build_ref"
+          fi
+
+          image_tag="$(printf '%s' "$raw_tag" | tr '[:upper:]' '[:lower:]' | sed -E 's#[^a-z0-9_.-]+#-#g; s#^[.-]+##; s#[.-]+$##')"
+          if [ -z "$image_tag" ]; then
+            echo "::error::Could not derive a Docker tag from '$raw_tag'."
+            exit 1
+          fi
+
+          image_tag="${image_tag:0:80}"
+          short_sha="$(git -C jellyfin-server rev-parse --short=12 HEAD)"
+          version="${image_tag}-${short_sha}"
+
+          {
+            echo "build_ref=$build_ref"
+            echo "image_tag=$image_tag"
+            echo "short_sha=$short_sha"
+            echo "version=$version"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Build local Docker image
+        working-directory: jellyfin-packaging
+        env:
+          BUILD_ARCH: ${{ inputs.arch }}
+          BUILD_VERSION: ${{ steps.meta.outputs.version }}
+        run: |
+          set -euo pipefail
+          ./build.py "$BUILD_VERSION" docker "$BUILD_ARCH" --local
+
+      - name: Log in to GHCR
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: echo "$GHCR_TOKEN" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Push Docker image
+        env:
+          BUILD_ARCH: ${{ inputs.arch }}
+          IMAGE_TAG: ${{ steps.meta.outputs.image_tag }}
+          VERSION: ${{ steps.meta.outputs.version }}
+        run: |
+          set -euo pipefail
+
+          local_image="jellyfin/jellyfin:${VERSION}-${BUILD_ARCH}"
+          moving_tag="${IMAGE_NAME}:${IMAGE_TAG}"
+          moving_arch_tag="${IMAGE_NAME}:${IMAGE_TAG}-${BUILD_ARCH}"
+          immutable_tag="${IMAGE_NAME}:${VERSION}"
+          immutable_arch_tag="${IMAGE_NAME}:${VERSION}-${BUILD_ARCH}"
+
+          docker image inspect "$local_image" >/dev/null
+          docker tag "$local_image" "$moving_tag"
+          docker tag "$local_image" "$moving_arch_tag"
+          docker tag "$local_image" "$immutable_tag"
+          docker tag "$local_image" "$immutable_arch_tag"
+
+          docker push "$moving_tag"
+          docker push "$moving_arch_tag"
+          docker push "$immutable_tag"
+          docker push "$immutable_arch_tag"
+
+          {
+            echo "### Published Docker image"
+            echo
+            echo "- Source ref: \`${{ steps.meta.outputs.build_ref }}\`"
+            echo "- Source commit: \`${{ steps.meta.outputs.short_sha }}\`"
+            echo "- Architecture: \`${BUILD_ARCH}\`"
+            echo "- Moving tag: \`${moving_tag}\`"
+            echo "- Moving architecture tag: \`${moving_arch_tag}\`"
+            echo "- Immutable tag: \`${immutable_tag}\`"
+            echo "- Immutable architecture tag: \`${immutable_arch_tag}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
