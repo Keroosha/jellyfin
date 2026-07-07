@@ -90,6 +90,7 @@
  - [mark-monteiro](https://github.com/mark-monteiro)
  - [MarkCiliaVincenti](https://github.com/MarkCiliaVincenti)
  - [Martin Reuter](https://github.com/reuterma24)
+ - [Matt Teahan](https://github.com/matt-teahan)
  - [Matt07211](https://github.com/Matt07211)
  - [Matthew Jones](https://github.com/matthew-jones-uk)
  - [Maxr1998](https://github.com/Maxr1998)
@@ -114,10 +115,12 @@
  - [oddstr13](https://github.com/oddstr13)
  - [olsh](https://github.com/olsh)
  - [orryverducci](https://github.com/orryverducci)
+ - [PCEWLKR](https://github.com/PCEWLKR)
  - [petermcneil](https://github.com/petermcneil)
  - [Phlogi](https://github.com/Phlogi)
  - [pjeanjean](https://github.com/pjeanjean)
  - [ploughpuff](https://github.com/ploughpuff)
+ - [poytiis](https://github.com/poytiis)
  - [pR0Ps](https://github.com/pR0Ps)
  - [PrplHaz4](https://github.com/PrplHaz4)
  - [RazeLighter777](https://github.com/RazeLighter777)
@@ -229,6 +232,7 @@
  - [LiHRaM](https://github.com/LiHRaM)
  - [MSalman5230](https://github.com/MSalman5230)
  - [dwandw](https://github.com/dwandw)
+ - [Lampan-git](https://github.com/Lampan-git)
 
 # Emby Contributors
 

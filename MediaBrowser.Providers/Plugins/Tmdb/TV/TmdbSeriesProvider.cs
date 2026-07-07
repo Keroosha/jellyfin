@@ -329,6 +329,11 @@ namespace MediaBrowser.Providers.Plugins.Tmdb.TV
                 }
             }
 
+            if (!string.IsNullOrEmpty(seriesResult.OriginalLanguage))
+            {
+                series.OriginalLanguage = seriesResult.OriginalLanguage;
+            }
+
             return series;
         }
 
@@ -407,6 +412,31 @@ namespace MediaBrowser.Providers.Plugins.Tmdb.TV
                     if (crewMember.Id > 0)
                     {
                         personInfo.SetProviderId(MetadataProvider.Tmdb, crewMember.Id.ToString(CultureInfo.InvariantCulture));
+                    }
+
+                    yield return personInfo;
+                }
+            }
+
+            if (seriesResult.CreatedBy is not null)
+            {
+                foreach (var person in seriesResult.CreatedBy)
+                {
+                    if (string.IsNullOrWhiteSpace(person.Name))
+                    {
+                        continue;
+                    }
+
+                    var personInfo = new PersonInfo
+                    {
+                        Name = person.Name.Trim(),
+                        Type = PersonKind.Creator,
+                        ImageUrl = _tmdbClientManager.GetProfileUrl(person.ProfilePath)
+                    };
+
+                    if (person.Id > 0)
+                    {
+                        personInfo.SetProviderId(MetadataProvider.Tmdb, person.Id.ToString(CultureInfo.InvariantCulture));
                     }
 
                     yield return personInfo;

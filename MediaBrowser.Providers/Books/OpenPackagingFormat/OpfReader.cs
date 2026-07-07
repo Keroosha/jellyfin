@@ -125,7 +125,7 @@ namespace MediaBrowser.Providers.Books.OpenPackagingFormat
 
             ReadStringInto("//dc:date", date =>
             {
-                if (DateTime.TryParse(date, out var dateValue))
+                if (DateTime.TryParse(date, CultureInfo.InvariantCulture, out var dateValue))
                 {
                     book.PremiereDate = dateValue.Date;
                     book.ProductionYear = dateValue.Date.Year;
@@ -260,6 +260,8 @@ namespace MediaBrowser.Providers.Books.OpenPackagingFormat
                     return PersonKind.Lyricist;
                 case "mus":
                     return PersonKind.AlbumArtist;
+                case "nrt":
+                    return PersonKind.Narrator;
                 case "oth":
                     return PersonKind.Unknown;
                 case "trl":

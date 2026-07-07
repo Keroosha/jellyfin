@@ -12,6 +12,7 @@ using System.Threading.Tasks;
 using Jellyfin.Extensions;
 using Jellyfin.XmlTv;
 using Jellyfin.XmlTv.Entities;
+using Jellyfin.XmlTv.Enums;
 using MediaBrowser.Common.Extensions;
 using MediaBrowser.Common.Net;
 using MediaBrowser.Controller.Configuration;
@@ -77,25 +78,39 @@ namespace Jellyfin.LiveTv.Listings
                 Directory.CreateDirectory(cacheDir);
             }
 
-            if (info.Path.StartsWith("http", StringComparison.OrdinalIgnoreCase))
+            try
             {
-                _logger.LogInformation("Downloading xmltv listings from {Path}", info.Path);
-
-                using var response = await _httpClientFactory.CreateClient(NamedClient.Default).GetAsync(info.Path, cancellationToken).ConfigureAwait(false);
-                var redirectedUrl = response.RequestMessage?.RequestUri?.ToString() ?? info.Path;
-                var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
-                await using (stream.ConfigureAwait(false))
+                if (info.Path.StartsWith("http", StringComparison.OrdinalIgnoreCase))
                 {
-                    return await UnzipIfNeededAndCopy(redirectedUrl, stream, cacheFile, cancellationToken).ConfigureAwait(false);
+                    _logger.LogInformation("Downloading xmltv listings from {Path}", info.Path);
+
+                    using var response = await _httpClientFactory.CreateClient(NamedClient.Default).GetAsync(info.Path, cancellationToken).ConfigureAwait(false);
+                    var redirectedUrl = response.RequestMessage?.RequestUri?.ToString() ?? info.Path;
+                    var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+                    await using (stream.ConfigureAwait(false))
+                    {
+                        return await UnzipIfNeededAndCopy(redirectedUrl, stream, cacheFile, cancellationToken).ConfigureAwait(false);
+                    }
+                }
+                else
+                {
+                    var stream = AsyncFile.OpenRead(info.Path);
+                    await using (stream.ConfigureAwait(false))
+                    {
+                        return await UnzipIfNeededAndCopy(info.Path, stream, cacheFile, cancellationToken).ConfigureAwait(false);
+                    }
                 }
             }
-            else
+            catch (Exception ex)
             {
-                var stream = AsyncFile.OpenRead(info.Path);
-                await using (stream.ConfigureAwait(false))
+                _logger.LogError(ex, "Error downloading or processing XMLTV file from {Path}", info.Path);
+
+                if (File.Exists(cacheFile))
                 {
-                    return await UnzipIfNeededAndCopy(info.Path, stream, cacheFile, cancellationToken).ConfigureAwait(false);
+                    File.Delete(cacheFile);
                 }
+
+                throw;
             }
         }
 
@@ -128,9 +143,20 @@ namespace Jellyfin.LiveTv.Listings
                 {
                     await stream.CopyToAsync(fileStream, cancellationToken).ConfigureAwait(false);
                 }
-
-                return file;
             }
+
+            var fileInfo = new FileInfo(file);
+            if (!fileInfo.Exists || fileInfo.Length == 0)
+            {
+                if (fileInfo.Exists)
+                {
+                    File.Delete(file);
+                }
+
+                throw new InvalidOperationException("Downloaded XMLTV file is empty: " + originalUrl);
+            }
+
+            return file;
         }
 
         public async Task<IEnumerable<ProgramInfo>> GetProgramsAsync(ListingsProviderInfo info, string channelId, DateTime startDateUtc, DateTime endDateUtc, CancellationToken cancellationToken)
@@ -155,6 +181,8 @@ namespace Jellyfin.LiveTv.Listings
             string? episodeTitle = program.Episode?.Title;
             var programCategories = program.Categories.Where(c => !string.IsNullOrWhiteSpace(c)).ToList();
             var imageUrl = program.Icons.FirstOrDefault()?.Source;
+            var episodeImageUrl = program.Images?.FirstOrDefault(m => m.Type == ImageType.Still)?.Path;
+            var backgroundImageUrl = program.Images?.FirstOrDefault(m => m.Type == ImageType.Backdrop)?.Path;
             var rating = program.Ratings.FirstOrDefault()?.Value;
             var starRating = program.StarRatings?.FirstOrDefault()?.StarRating;
 
@@ -180,6 +208,8 @@ namespace Jellyfin.LiveTv.Listings
                 IsSports = programCategories.Any(c => info.SportsCategories.Contains(c, StringComparison.OrdinalIgnoreCase)),
                 ImageUrl = string.IsNullOrEmpty(imageUrl) ? null : imageUrl,
                 HasImage = !string.IsNullOrEmpty(imageUrl),
+                BackdropImageUrl = string.IsNullOrEmpty(backgroundImageUrl) ? null : backgroundImageUrl,
+                ThumbImageUrl = string.IsNullOrEmpty(episodeImageUrl) ? null : episodeImageUrl,
                 OfficialRating = string.IsNullOrEmpty(rating) ? null : rating,
                 CommunityRating = starRating is null ? null : (float)starRating.Value,
                 SeriesId = program.Episode?.Episode is null ? null : program.Title?.GetMD5().ToString("N", CultureInfo.InvariantCulture)
